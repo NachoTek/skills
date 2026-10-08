@@ -23,6 +23,30 @@ Use background agents so you can stay in active dialogue with the user.
 
 Communication to and from subagents should be sparse. Communicate primarily through **context pointers**: research notes, previous commits, and others. Don't duplicate information already available via pointers.
 
+### External gates and session continuity
+
+Human review, CI, deployment, and other external waits are event-driven gates. Never hold the coordinator or a subagent in `sleep` or polling loops while waiting for a gate to change.
+
+When a subagent reaches an external gate:
+
+1. It returns immediately with the PR/issue receipt, branch, worktree, current head SHA, and its OpenCode `task_id`.
+2. The coordinator records a `PR -> task_id` mapping and continues non-overlapping work or becomes idle.
+3. A harness notification or webhook wakes the coordinator when the gate changes.
+4. The coordinator re-reads the authoritative state rather than trusting the notification alone.
+5. The coordinator resumes the **same child session** with `task(task_id=<saved-id>, ...)`, supplying the verified review/CI result and next action. Do not replace it with a blank-slate subagent unless the original session is unavailable or intentionally discarded.
+
+Keep the branch and worktree until the PR reaches a terminal state. If the harness cannot deliver events, use one bounded watcher outside the LLM session that reports once and exits; do not consume an agent slot with sleeps.
+
+### Closure ownership
+
+The coordinator is accountable for closure, while the resumed implementation subagent normally executes task-local cleanup because it already knows the exact PR, issue, branch, and worktree.
+
+After approval, the resumed child should verify the current head, checks, approval, and mergeability; merge; verify the PR is merged; close the associated issue if automation did not; delete the remote and local branches; remove its worktree; and return receipts plus any residue it could not clear.
+
+The coordinator then independently verifies the PR/issue terminal state and absence of the worktree and refs, documents the completed work in the goal tracker, and marks the task complete. If residue remains, resume the same child with a cleanup-only prompt. If that child is unavailable, dispatch a janitor subagent.
+
+A merged implementation is not complete until tracker writeback and residue-free cleanup are verified.
+
 ## Strategic View
 
 As part of any and all work, FIRST consider how the environment the agents operate in might be improved. Agents thrive in the **pit of success**:
