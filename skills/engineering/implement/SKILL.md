@@ -20,28 +20,16 @@ Commit your work to the current branch.
 
 When the ticket or spec says the work ships via PR (the NachoTek lane always does):
 
-1. Branch: one branch per ticket, named `<issue-number>-<slug>` off current main (e.g. `98-logging-foundation`).
-2. Push and open a PR against main.
-3. PR body MUST end with a closing keyword line so the parent issue auto-closes on merge:
-   `Closes #<issue-number>`
-   Commit-title references like `(#98)` do NOT auto-close; the keyword must be in the PR BODY. (Missed on PR #116; issue #98 had to be closed by hand. Do not repeat.)
-4. Add the `ready-for-codereview` label to the PR: this fires the automated review webhook.
-5. Post a completion comment on the ticket: branch, PR link, diff summary, verification (test counts, lanes run).
-6. Delete the branch after merge (bot merges prune it; if not, clean it up on next touch).
-7. Address automated-review findings by pushing fixes to the same branch; the review cycle re-fires. Never force-push over reviewed commits.
+1. Resolve the integration base before creating the branch. Use the explicit campaign/feature branch named by the parent issue or coordinator; otherwise use the repository default branch. Record it as `BASE_BRANCH`.
+2. Create one branch per ticket, named `<issue-number>-<slug>`, from the current `origin/$BASE_BRANCH`. Never commit or push directly to `main` or another integration base.
+3. Push and open the PR with `--base "$BASE_BRANCH"`. The PR body MUST end with `Closes #<issue-number>`. Commit-title references like `(#98)` do not close issues.
+4. Run `/code-review` and fix its findings before publication. CI requests `TerminalSausage` automatically when green; do not use legacy review labels or third-party review routes.
+5. Post a completion comment on the ticket: base branch, branch, PR link, diff summary, and verification (test counts and lanes run).
+6. At an external CI or human-review gate, return a receipt containing PR, base, branch, worktree, and head SHA, then end the turn. Do not sleep or poll. The coordinator records this child task ID and resumes this same session when Herdr delivers the event.
+7. When resumed, verify GitHub ground truth. If the PR is behind, rebase on the current `origin/$BASE_BRANCH`, push with `--force-with-lease`, return a fresh receipt, and stop for the new CI/review event. If approved and mergeable, squash-merge, explicitly close the issue when a non-default integration base prevented auto-close, then remove local/remote branch and worktree residue.
+8. Finish with a closure receipt: merged PR and SHA, issue state, deleted refs, removed worktree, and clean base checkout. The coordinator independently verifies it and updates the goal tracker.
 
-## Watchdog discipline (phantom-watchdog rule, 2026-09-06)
-
-If you hand off to a detached worker and arm a cron watchdog over it:
-
-1. NEVER register a watchdog against a script you have not verified exists on disk.
-2. Use the REUSABLE monitor: do not write bespoke per-PR scripts:
-   - Pre-PR: `~/.hermes/scripts/mar-monitor.sh --issue <N> --branch <N>-<slug> --wt <worktree-path>`
-   - Post-PR: `~/.hermes/scripts/mar-monitor.sh --pr <PR>`
-   Full arming checklist and state-line contract: `~/.hermes/scripts/mar-monitor-README.md`
-3. Probe-run the exact monitor command; confirm one valid state line before reporting "watchdog armed". Then verify the first tick fired.
-4. Commit checkpoints to the ticket branch at least every 30 minutes of active work: uncommitted work in a worktree is one hung worker away from being orphaned (645 lines sat uncommitted for 2h on #104 before anyone noticed).
-5. Delete the watchdog cron when the PR merges or issue closes.
+For a campaign branch, child tickets use ticket branches and PRs targeting that campaign branch. Only the final campaign PR targets the default branch and closes the parent epic. Protect the campaign branch with the same required CI/review rules as `main`; it is an integration base, not a shared working tree.
 
 ## Scope discipline
 
