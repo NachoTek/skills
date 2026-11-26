@@ -33,17 +33,17 @@ When a subagent reaches an external gate:
 2. The coordinator records a `PR -> task_id` mapping and continues non-overlapping work or becomes idle.
 3. A harness notification or webhook wakes the coordinator when the gate changes.
 4. The coordinator re-reads the authoritative state rather than trusting the notification alone.
-5. The coordinator resumes the **same child session** with `task(task_id=<saved-id>, ...)`, supplying the verified review/CI result and next action. Do not replace it with a blank-slate subagent unless the original session is unavailable or intentionally discarded.
+5. At the wake-up, the coordinator dispatches a **fresh subagent briefed by the receipt**: it re-reads the authoritative state (PR, checks, branch, head SHA) and acts on it. Resume the **same child session** only when it holds un-recoverable local state (un-pushed commits, un-committed worktree changes) — and only once; a child that has already been resumed gets its residue swept into commits so a fresh session can take over. Never continue a bloated context: review findings, rebases, and merges always run on fresh context (DK 2026-11-12).
 
-Keep the branch and worktree until the PR reaches a terminal state. If the harness cannot deliver events, use one bounded watcher outside the LLM session that reports once and exits; do not consume an agent slot with sleeps.
+Keep the branch and worktree until the PR reaches a terminal state, so a fresh session can find and sweep them. If the harness cannot deliver events, use one bounded watcher outside the LLM session that reports once and exits; do not consume an agent slot with sleeps.
 
 ### Closure ownership
 
-The coordinator is accountable for closure, while the resumed implementation subagent normally executes task-local cleanup because it already knows the exact PR, issue, branch, and worktree.
+The coordinator is accountable for closure, while the implementation subagent (resumed child, or fresh session briefed by the receipt) normally executes task-local cleanup because the receipt names the exact PR, issue, branch, and worktree.
 
-After approval, the resumed child should verify the current head, checks, approval, and mergeability; merge; verify the PR is merged; close the associated issue if automation did not; delete the remote and local branches; remove its worktree; and return receipts plus any residue it could not clear.
+After approval, that subagent should verify the current head, checks, approval, and mergeability; merge; verify the PR is merged; close the associated issue if automation did not; delete the remote and local branches; remove its worktree; and return receipts plus any residue it could not clear.
 
-The coordinator then independently verifies the PR/issue terminal state and absence of the worktree and refs, documents the completed work in the goal tracker, and marks the task complete. If residue remains, resume the same child with a cleanup-only prompt. If that child is unavailable, dispatch a janitor subagent.
+The coordinator then independently verifies the PR/issue terminal state and absence of the worktree and refs, documents the completed work in the goal tracker, and marks the task complete. If residue remains, dispatch a fresh subagent with a cleanup-only brief (the same child only if it is healthy and holds un-recovered state). If none can, dispatch a janitor subagent.
 
 A merged implementation is not complete until tracker writeback and residue-free cleanup are verified.
 
